@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -11,15 +12,17 @@ import (
 type JobConfig struct {
 	Name     string `yaml:"name"`
 	Schedule string `yaml:"schedule"`
+	Grace    int    `yaml:"grace_minutes"`
 }
 
-// AlertConfig holds alerting backend settings.
+// AlertConfig holds configuration for alert destinations.
 type AlertConfig struct {
 	Email   *EmailConfig   `yaml:"email,omitempty"`
 	Webhook *WebhookConfig `yaml:"webhook,omitempty"`
+	Slack   *SlackConfig   `yaml:"slack,omitempty"`
 }
 
-// EmailConfig holds SMTP settings for email alerts.
+// EmailConfig holds SMTP alert settings.
 type EmailConfig struct {
 	SMTPHost string `yaml:"smtp_host"`
 	SMTPPort int    `yaml:"smtp_port"`
@@ -27,9 +30,15 @@ type EmailConfig struct {
 	To       string `yaml:"to"`
 }
 
-// WebhookConfig holds settings for webhook alerts.
+// WebhookConfig holds HTTP webhook alert settings.
 type WebhookConfig struct {
 	URL string `yaml:"url"`
+}
+
+// SlackConfig holds Slack incoming webhook alert settings.
+type SlackConfig struct {
+	WebhookURL string `yaml:"webhook_url"`
+	Channel    string `yaml:"channel"`
 }
 
 // Config is the top-level application configuration.
@@ -39,7 +48,7 @@ type Config struct {
 	Alerts   AlertConfig `yaml:"alerts"`
 }
 
-// Load reads and validates a YAML config file at the given path.
+// Load reads and validates a YAML config file from the given path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -56,15 +65,15 @@ func Load(path string) (*Config, error) {
 	}
 
 	if len(cfg.Jobs) == 0 {
-		return nil, fmt.Errorf("config: at least one job must be defined")
+		return nil, errors.New("config: no jobs defined")
 	}
 
 	for i, j := range cfg.Jobs {
 		if j.Name == "" {
-			return nil, fmt.Errorf("config: job[%d] missing name", i)
+			return nil, fmt.Errorf("config: job[%d]: name is required", i)
 		}
 		if j.Schedule == "" {
-			return nil, fmt.Errorf("config: job %q missing schedule", j.Name)
+			return nil, fmt.Errorf("config: job %q: schedule is required", j.Name)
 		}
 	}
 
