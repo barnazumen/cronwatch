@@ -41,5 +41,7 @@ func BuildAlerters(cfg *config.Config, logger *slog.Logger) (*MultiAlerter, erro
 		alerters = append(alerters, NewPagerDutyAlerter(cfg.Alerting.PagerDuty))
 	}
 
-	return NewMultiAlerter(alerters...), nil
+	ma := NewMultiAlerter(alerters...)
+	logger.Info("alerting backends initialised", "count", len(alerters))
+	return ma, nil
 }
