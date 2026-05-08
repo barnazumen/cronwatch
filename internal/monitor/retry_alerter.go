@@ -2,35 +2,49 @@ package monitor
 
 import (
 	"fmt"
+	"time"
 
-	"github.com/cronwatch/cronwatch/internal/job"
-	"github.com/cronwatch/cronwatch/internal/watcher"
+	"github.com/cronwatch/internal/watcher"
 )
 
-// RetryAlerter wraps an Alerter and retries failed alert deliveries
-// using the provided Retry policy.
+// RetryAlerter wraps an Alerter and retries transient failures up to
+// maxAttempts times, sleeping delay between each attempt.
 type RetryAlerter struct {
-	inner Alerter
-	retry *watcher.Retry
+	inner      Alerter
+	maxAttempts int
+	delay      time.Duration
 }
 
-// NewRetryAlerter returns a RetryAlerter that delegates to inner and
-// retries delivery according to the given Retry policy.
-func NewRetryAlerter(inner Alerter, r *watcher.Retry) *RetryAlerter {
-	return &RetryAlerter{inner: inner, retry: r}
-}
-
-// Alert attempts to deliver the alert via the inner Alerter, retrying
-// up to the configured number of times on failure.
-func (ra *RetryAlerter) Alert(j *job.Job, event string) error {
-	var lastErr error
-	err := ra.retry.Do(func() error {
-		lastErr = ra.inner.Alert(j, event)
-		return lastErr
-	})
-	if err != nil {
-		return fmt.Errorf("alert delivery failed after %d attempts: %w",
-			ra.retry.MaxAttempts, err)
+// NewRetryAlerter returns a RetryAlerter that retries up to maxAttempts times
+// with the given delay between attempts. If maxAttempts < 1 it defaults to 3;
+// negative delay is treated as zero.
+func NewRetryAlerter(inner Alerter, maxAttempts int, delay time.Duration) *RetryAlerter {
+	if maxAttempts < 1 {
+		maxAttempts = 3
 	}
-	return nil
+	if delay < 0 {
+		delay = 0
+	}
+	return &RetryAlerter{
+		inner:       inner,
+		maxAttempts: maxAttempts,
+		delay:       delay,
+	}
+}
+
+// Alert calls the inner Alerter, retrying on error up to maxAttempts times.
+// It returns the last error if all attempts fail.
+func (r *RetryAlerter) Alert(e *watcher.Event) error {
+	var lastErr error
+	for attempt := 1; attempt <= r.maxAttempts; attempt++ {
+		if err := r.inner.Alert(e); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if attempt < r.maxAttempts && r.delay > 0 {
+			time.Sleep(r.delay)
+		}
+	}
+	return fmt.Errorf("alert failed after %d attempts: %w", r.maxAttempts, lastErr)
 }
